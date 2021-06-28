@@ -28,6 +28,9 @@ def extract_conceptnet_triples(lang, input_file, stop_words):
                 all_triple[start].append((relation, end))
             if relation not in relation_dict.keys():
                 relation_dict[relation] = len(relation_dict)
+
+    for start in tqdm(all_triple.keys(), desc="remove overlap triple..", ncols=100):
+        all_triple[start] = list(set(all_triple[start]))
     return all_triple, relation_dict
 
 
@@ -196,10 +199,10 @@ if __name__ =="__main__":
     #     torch.save(prepro_data, prepro_path)
 
     #
-    # conceptnet_raw_path = "/data/user15/workspace/rb_pjt/data/conceptnet-assertions-5.7.0.csv"
-    # stop_words = ["a", "an", "am", "are","and", "be", "been", "being", "to","the","of", "is", "which"]
-    # all_triple, relation_dict  = extract_conceptnet_triples("en",conceptnet_raw_path, stop_words)
-    # torch.save(all_triple,"./data/all_triple.pkl")
+    conceptnet_raw_path = "/data/user15/workspace/rb_pjt/data/conceptnet-assertions-5.7.0.csv"
+    stop_words = ["a", "an", "am", "are","and", "be", "been", "being", "to","the","of", "is", "which", "not"]
+    all_triple, relation_dict  = extract_conceptnet_triples("en",conceptnet_raw_path, stop_words)
+    torch.save(all_triple,"./data/all_triple.pkl")
 
     ################# find triplet frequency ###########################################################################
     split_prepro_file_path = "./data/prepro_split"
@@ -220,13 +223,13 @@ if __name__ =="__main__":
                        "hasproperty", "hassubevent", "locatednear", "madeof", "motivatedbygoal", "notcapableof",
                        "notdesires", "nothasproperty", "partof", "receivesaction", "usedfor"]
 
-    # atomic_filter = ["atlocation", "capableof", "causes", "causesdesire",  "desires", "hasa",
-    #                    "hasfirstsubevent", "haslastsubevent", "hasprerequisite",
-    #                    "hasproperty", "hassubevent", "madeof", "motivatedbygoal",
-    #                    "notdesires", "partof", "receivesaction", "usedfor"]
+    atomic_filter = ["atlocation", "capableof", "causes", "causesdesire",  "desires", "hasa",
+                       "hasfirstsubevent", "haslastsubevent", "hasprerequisite",
+                       "hasproperty", "hassubevent", "madeof", "motivatedbygoal",
+                       "notdesires", "partof", "receivesaction", "usedfor"]
 
     common_triple = filter_commonsense_triple(all_triple, relation_filter)
-    # atomic_triple = filter_commonsense_triple(all_triple, atomic_filter)
+    atomic_triple = filter_commonsense_triple(all_triple, atomic_filter)
     del all_triple
     for i in tqdm(range(split_num), ncols=100, desc="find triplet in sentence"):
         raw_path = os.path.join(split_prepro_file_path, "file"+str(i)+"_.pkl")
@@ -240,13 +243,92 @@ if __name__ =="__main__":
         torch.save(freq_2, path_2)
         del freq_1
         del freq_2
+########################################################################################################################
+import torch
+from collections import Counter
+import glob
+
+triple_2_ls = glob.glob("./data/freq_2/*")
+
+triple_freq2 = list()
+for triple_ls in tqdm(triple_2_ls, desc="file load..", ncols=100):
+    triple = torch.load(triple_ls)
+    triple_freq2.extend(triple)
+
+# conceptnet 21 개 릴레이션 총 트리플렛 개수: 214,640
+## wiki에 등장한 트리플렛 갯수 : 51,201
+triple_2 = list(set(triple_freq2))
+
+## wiki에 등장한 트리플렛의 빈도수
+#Counter(triple_freq2)
+
+# 각 property, actions, outcomes에 해당하는 relation 별로 빈도수 확인 ##########################################################################################
+# property = ["atlocation", "notdesires", "createdby", "nothasproperty", "desires", "partof", "hasproperty", "usedfor", "locatednear", "receivesaction", "madeof"]
+# actions = ["causes", "causesdesire", "hasa", "hasfirstsubevent", "receivesaction", "haslastsubevent", "hasprerequisite", "hassubevent", "motivatedbygoal"]
+# outcomes = ["capableof", "notcapableof"]
 #
-# freq_1 = torch.load("/data/user15/workspace/rb_pjt/data/freq_1/file0_.pkl")
-# freq_2 = torch.load("/data/user15/workspace/rb_pjt/data/freq_2/file0_.pkl")
+#
+# property_triple = dict()
+# actions_triple = dict()
+# outcomes_triple = dict()
+
+# conceptnet relation 이 섞여져 있음.
+# for s,r,o in tqdm(triple_freq2, desc="sorting.."):
+#     if r in property:
+#         if s not in property_triple.keys():
+#             property_triple[s] = list()
+#         property_triple[s].append(o)
+#     elif r in actions:
+#         if s not in actions_triple.keys():
+#             actions_triple[s] = list()
+#         actions_triple[s].append(o)
+#     elif r in outcomes:
+#         if s not in outcomes_triple.keys():
+#             outcomes_triple[s] = list()
+#         outcomes_triple[s].append(o)
+#     else:
+#         print("this relation is not supported ! ")
+#         print(s,r,o)
+############################################################################################################################################################
+
+ls_dict = dict()
+for s,r, o in tqdm(triple_freq2, desc="sorting triples.."):
+    cc = list(set(ls_dict)&set([s,o]))
+    if len(cc) == 0:
+        ls_dict[s] = list()
+        ls_dict[s].append(o)
+    if len(cc) == 1:
+        if cc[0] == s:
+            ls_dict[s].append(o)
+        elif cc[0] == o:
+            ls_dict[o].append(s)
+        else:
+            print("this concept is not supported ! ")
+    if len(cc) == 2:
+        ls_dict[s].append(o)
+        ls_dict[o].append(s)
+#######################################################################################################################
+
+sample_triple = list()
+for s,r,o in tqdm(total_triple, desc='make sample frequency'):
+    if "people" == s:
+        sample_triple.append(o)
+    elif "people" ==o:
+        sample_triple.append(s)
+    else:
+        continue
 
 
+len(set(sample_triple))
+
+total_triple = list()
+for s in tqdm(all_triple.keys()):
+    for r,o in all_triple[s]:
+        total_triple.append((s,r,o))
 
 
+    
+    
 
 
 
